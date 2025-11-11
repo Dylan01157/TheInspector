@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Jeu d'enquête - Les trois suspects</title>
+<style>
+body {
+    background-color: #1c1c1c;
+    color: #f5f5f5;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 { text-align: center; }
+
+.container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+}
+
+.context {
+    text-align: center;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+}
+
+/* Colonne gauche: dialogue */
+.left {
+    width: 70%;
+}
+
+#dialogue {
+    background: #222;
+    border-radius: 10px;
+    padding: 15px;
+    min-height: 400px;
+    max-height: 500px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    white-space: pre-wrap;
+}
+
+input, button, select, textarea {
+    padding: 8px;
+    border-radius: 5px;
+    border: none;
+    margin: 5px 0;
+}
+
+input { width: 60%; }
+button { background: #4CAF50; color: white; cursor: pointer; }
+button:hover { background: #45a049; }
+
+/* Image du suspect */
+#imgSelected {
+    max-width: 150px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Colonne droite: carnet de notes */
+.right {
+    width: 30%;
+    background: #222;
+    border-radius: 10px;
+    padding: 15px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+textarea { width: 100%; height: 120px; }
+
+.suspects {
+    display: flex;
+    justify-content: flex-start;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.suspect {
+    background-color: #333;
+    padding: 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    width: 120px;
+    text-align: center;
+}
+
+.suspect:hover { background-color: #444; }
+
+#selected { margin-bottom: 10px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>🕵️‍♂️ Enquête interactive</h1>
+
+<div class="context">
+    {{ context }}
+</div>
+
+<div class="suspects">
+    {% for nom in suspects %}
+    <div class="suspect" onclick="selectSuspect('{{ nom }}')">{{ nom }}</div>
+    {% endfor %}
+</div>
+
+<div class="container">
+
+    <!-- Colonne gauche: conversation -->
+    <div class="left">
+        <div id="selected">Aucun suspect sélectionné.</div>
+
+        <!-- Image du suspect -->
+        <div id="suspectImage" style="text-align:center; margin-bottom:10px;">
+            <img id="imgSelected" src="" alt="Image du suspect" style="display:none;">
+        </div>
+
+        <div id="dialogue"></div>
+        <input type="text" id="question" placeholder="Pose une question..." />
+        <button onclick="askQuestion()">Envoyer</button>
+        <button onclick="accuser()">Accuser</button>
+    </div>
+
+    <!-- Colonne droite: carnet de notes -->
+    <div class="right">
+        <h3>Carnet de notes 📝</h3>
+        <label for="sujet">Sujet :</label>
+        <select id="sujet">
+            {% for nom in suspects %}
+            <option value="{{ nom }}">{{ nom }}</option>
+            {% endfor %}
+            <option value="victime">Victime</option>
+        </select>
+        <textarea id="noteTexte" placeholder="Écris tes notes ici..."></textarea>
+        <button onclick="sauvegarderNote()">Sauvegarder</button>
+
+        <h4>Notes actuelles :</h4>
+        <div id="notesAffichage" style="white-space: pre-wrap;"></div>
+    </div>
+</div>
+
+<script>
+let selected = null;
+
+// URL des images des suspects
+const suspectImages = {
+    "Ariane": "/static/images/ariane.png",
+    "Benoit": "/static/images/benoit.png",
+    "Camille": "/static/images/camille.png"
+};
+
+// Sélection d'un suspect
+function selectSuspect(nom) {
+    selected = nom;
+    document.getElementById("selected").innerText = "Suspect sélectionné : " + nom;
+    document.getElementById("dialogue").innerHTML = "";
+
+    // Afficher l'image correspondante
+    const img = document.getElementById("imgSelected");
+    img.src = suspectImages[nom] || "";
+    img.style.display = img.src ? "block" : "none";
+}
+
+// Poser une question
+async function askQuestion() {
+    if (!selected) { alert("Choisis un suspect avant de poser une question !"); return; }
+    const question = document.getElementById("question").value;
+    if (!question.trim()) return;
+    document.getElementById("dialogue").innerHTML += `<p><b>Vous :</b> ${question}</p>`;
+    document.getElementById("question").value = "";
+
+    const response = await fetch("/question", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ nom: selected, question })
+    });
+    const data = await response.json();
+    document.getElementById("dialogue").innerHTML += `<p><b>${selected} :</b> ${data.reponse}</p>`;
+}
+
+// Accuser un suspect
+async function accuser() {
+    if (!selected) { alert("Choisis d'abord un suspect à accuser !"); return; }
+    const response = await fetch("/accuser", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ nom: selected })
+    });
+    const data = await response.json();
+    alert(data.message);
+    if (data.resultat === "perdu" || data.resultat === "gagné") {
+        window.location.reload();
+    }
+}
+
+// --- Gestion carnet de notes ---
+function sauvegarderNote() {
+    const sujet = document.getElementById('sujet').value;
+    const texte = document.getElementById('noteTexte').value;
+
+    fetch('/note', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sujet: sujet, texte: texte })
+    })
+    .then(res => res.json())
+    .then(data => afficherNotes(data.notes));
+}
+
+function afficherNotes(notes) {
+    const div = document.getElementById('notesAffichage');
+    div.innerHTML = '';
+    for (let key in notes) {
+        div.innerHTML += `• ${key}: ${notes[key]}\n`;
+    }
+}
+
+// Charger les notes existantes au démarrage
+fetch('/notes')
+    .then(res => res.json())
+    .then(data => afficherNotes(data.notes));
+</script>
+</body>
+</html>
